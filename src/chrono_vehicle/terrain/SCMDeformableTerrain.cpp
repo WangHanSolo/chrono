@@ -846,10 +846,17 @@ void SCMDeformableSoil::ComputeInternalForces() {
     m_num_ray_casts = 0;
     m_num_ray_hits = 0;
 
+////#pragma omp parallel
+////#pragma omp master
+////    std::cout << "Number of threads: " << CHOMPfunctions::GetNumThreads() << std::endl;
+
     m_timer_ray_casting.start();
 
     // Loop through all moving patches (user-defined or default one)
-    for (auto& p : m_patches) {
+#pragma omp parallel for
+    for (int ipatch = 0; ipatch < m_patches.size(); ipatch++) {
+        auto& p = m_patches[ipatch];
+
         // Loop through all vertices in this range
         for (int i = p.m_bl.x(); i <= p.m_tr.x(); i++) {
             for (int j = p.m_bl.y(); j <= p.m_tr.y(); j++) {
@@ -858,7 +865,10 @@ void SCMDeformableSoil::ComputeInternalForces() {
                 // Move from (i, j) to (x, y, z) representation in the world frame
                 double x = i * m_delta;
                 double y = j * m_delta;
-                double z = GetHeight(ij);
+                double z;
+#pragma omp critical(SCM_ray_casting)
+                z = GetHeight(ij);
+                
                 ChVector<> vertex_abs = m_plane.TransformPointLocalToParent(ChVector<>(x, y, z));
 
                 // Create ray at current grid location
@@ -872,18 +882,22 @@ void SCMDeformableSoil::ComputeInternalForces() {
 
                 // Cast ray into collision system
                 GetSystem()->GetCollisionSystem()->RayHit(from, to, mrayhit_result);
+#pragma omp atomic
                 m_num_ray_casts++;
 
                 if (mrayhit_result.hit) {
-                    // If this is the first hit from this node, initialize the node record
-                    if (m_grid_map.find(ij) == m_grid_map.end()) {
-                        m_grid_map.insert(std::make_pair(ij, NodeRecord(z, z)));
-                    }
+#pragma omp critical(SCM_ray_casting)
+                    {
+                        // If this is the first hit from this node, initialize the node record
+                        if (m_grid_map.find(ij) == m_grid_map.end()) {
+                            m_grid_map.insert(std::make_pair(ij, NodeRecord(z, z)));
+                        }
 
-                    // Add to our map of hits to process
-                    HitRecord record = {mrayhit_result.hitModel->GetContactable(), mrayhit_result.abs_hitPoint, -1};
-                    hits.insert(std::make_pair(ij, record));
-                    m_num_ray_hits++;
+                        // Add to our map of hits to process
+                        HitRecord record = {mrayhit_result.hitModel->GetContactable(), mrayhit_result.abs_hitPoint, -1};
+                        hits.insert(std::make_pair(ij, record));
+                        m_num_ray_hits++;
+                    }
                 }
             }
         }

@@ -31,6 +31,7 @@
 #include "chrono/physics/ChLoadsBody.h"
 #include "chrono/physics/ChSystem.h"
 #include "chrono/core/ChTimer.h"
+#include "chrono/parallel/ChOpenMP.h"
 
 #include "chrono_vehicle/ChApiVehicle.h"
 #include "chrono_vehicle/ChSubsysDefs.h"
